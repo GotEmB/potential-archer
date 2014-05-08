@@ -93,8 +93,14 @@ fetchCommit = (repo, commit) ->
 			com = JSON.parse(body)
 			items = com.files
 			items.forEach (item) ->
-				mapper.getLanguage
-
+				fileName = item.fileName
+				changesMade = item.changes
+				language = mapper.getLanguage fileName.substring fileName.lastIndexOf(".")
+				db.Commit.findAndModify {sha: item.sha}, {$addToSet: {changes: {language: language}}}, {new:true} (err, resp) ->
+					if !err
+						db.Commit.findAndModify {sha: item.sha, "changes.language": language }, {$inc: {"changes.$.count": changesMade}}, {new: true} , (err, resp) ->
+							if !err
+								console.log "Successfully inserted commit"
 
 exports.startJobs = ->
 	do doTask = ->
