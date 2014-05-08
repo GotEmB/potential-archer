@@ -36,13 +36,16 @@ exports.getAndInsertTopRepositories = (number) ->
 			, (err, response, body) ->
 				items = JSON.parse(body).items
 				async.each items, (item, callback) ->
-					repo = new db.Repository
-						fullName: item.full_name
-						stars: item.stargazers_count
-						forks: item.forks_count
-					repo.save (err, repo) ->
+					db.Repository.findOneAndUpdate {fullName: item.full_name},
+						$setOnInsert:
+							fullName: item.full_name
+						$set:
+							stars: item.stargazers_count
+							forks: item.forks_count
+					, upsert: true, new: true
+					, (err, repo) ->
 						fetchRepoLanguages repo
-						fetchRepoCommits repo
+						# fetchRepoCommits repo
 						callback()
 				, ->
 					console.log "Saved #{items.length} repositories of Top Repositories from page #{page}"
@@ -81,7 +84,7 @@ fetchRepoCommits = (repo, date = "") ->
 							exports.fetchCommit repo, commit
 
 getUserOrCreateUser = (username, callback) ->
-	db.User.findOneAndUpdate {username: username}, {$setOnInsert: username: username}, upsert: true, (err, user) ->
+	db.User.findOneAndUpdate {username: username}, {$setOnInsert: username: username}, upsert: true, new: true, (err, user) ->
 		callback err, user
 
 fetchCommit = (repo, commit) ->
@@ -97,8 +100,11 @@ fetchCommit = (repo, commit) ->
 
 
 exports.startJobs = ->
-	do doTask = ->
+	intervalDescriptor = null
+	doTask = ->
 		console.log "#{searchJobs.length} Search Jobs and #{apiJobs.length} API Jobs in queue"
+		clearInterval intervalDescriptor if searchJobs.length is 0 and apiJobs.length is 0
 		searchJobs.shift()?() for i in [0 ... globals.searchRequestsPerMinute]
 		apiJobs.shift()?() for i in [0 ... globals.apiRequestsPerMinute]
-	setInterval doTask, 1000 * 60 # Runs every minute
+	intervalDescriptor = setInterval doTask, 1000 * 60 # Runs every minute
+	doTask()
