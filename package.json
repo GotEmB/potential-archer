@@ -1,0 +1,25 @@
+{
+  "name": "potential-archer",
+  "version": "0.0.0",
+  "description": "Import data from api.github.com to mongodb. CS 249 Project, Spring 2014, UCLA",
+  "main": "web.coffee",
+  "dependencies": {
+    "async": "~0.8.0",
+    "mongoose": "~3.8.8",
+    "request": "~2.34.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GotEmB/potential-archer.git"
+  },
+  "keywords": [
+    "data",
+    "mining"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/GotEmB/potential-archer/issues"
+  },
+  "homepage": "https://github.com/GotEmB/potential-archer"
+}
