@@ -1,6 +1,6 @@
 mongoose = require "mongoose"
 
-mongoose.connect process.env.MONGOSTR
+mongoose.connect process.env.MONGO_CONN_STR
 
 exports.User = mongoose.model "User",
 	username: String

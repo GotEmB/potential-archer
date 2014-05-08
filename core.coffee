@@ -8,7 +8,8 @@ globals =
 	apiRequestsPerMinute: 80
 	apiRootUrl: "https://api.github.com"
 
-githubApi = ({url, qs} = {url: "", qs: {}}, callback) ->
+githubApi = ({url, qs} = {}, callback) ->
+	qs ?= {}
 	qs.access_token = process.env.GH_ACCESS_TOKEN
 	request
 		method: "GET"
@@ -19,44 +20,47 @@ githubApi = ({url, qs} = {url: "", qs: {}}, callback) ->
 
 searchJobs = []
 apiJobs = []
-# commits
-# contributors
-# languages
 
 exports.getAndInsertTopRepositories = (number) ->
-	itemsDone = 0
 	[1 .. Math.ceil(number / 100)].forEach (page) ->
+		console.log "Adding Search Job to fetch page #{page} of Top Repositories"
 		searchJobs.push ->
+			console.log "Fetching page #{page} of Top Repositories"
 			githubApi
 				url: "/search/repositories"
 				qs:
 					q: "created:>1970-01-01"
 					sort: "stars"
-					per_page: 100
+					per_page: Math.min 100, number - (page - 1) * 100
 					page: page
 			, (err, response, body) ->
 				items = JSON.parse(body).items
-				itemsDone += items.length
-				items.forEach (item) ->
+				async.each items, (item, callback) ->
 					repo = new db.Repository
 						fullName: item.full_name
 						stars: item.stargazers_count
-						forks: forks_count
-					repo.save()
-					exports.fetchRepoLanguages repo
-					exports.fetchRepoCommits repo, ''
+						forks: item.forks_count
+					repo.save (err, repo) ->
+						fetchRepoLanguages repo
+						fetchRepoCommits repo
+						callback()
+				, ->
+					console.log "Saved #{items.length} repositories of Top Repositories from page #{page}"
 
 fetchRepoLanguages = (repo) ->
+	console.log "Adding API Job to fetch language statistics for repo #{repo.fullName}"
 	apiJobs.push ->
+		console.log "Fetching language statistics for repo #{repo.fullName}"
 		githubApi
-			url: "/repos/#{repo.full_name}/languages"
+			url: "/repos/#{repo.fullName}/languages"
 		, (err, response, body) ->
-			repo.languages = [];
-			for language, lineCount in JSON(body)
-				repo.languages.push language: language, lineCount: lineCount
-			repo.save()
+			languages = []
+			for language, lineCount of JSON.parse body
+				languages.push language: language, lineCount: lineCount
+			db.Repository.update {_id: repo._id}, languages: languages, (err, count) ->
+				console.log "Saved language statistics for repo #{repo.fullName}"
 
-fetchRepoCommits = (repo, date) ->
+fetchRepoCommits = (repo, date = "") ->
 	apiJobs.push ->
 		githubApi
 			url: "/repos/#{repo.full_name}/commits"
@@ -90,7 +94,7 @@ getUserOrCreateUser = (username, callback) ->
 fetchCommit = (repo, commit) ->
 	apiJobs.push ->
 		githubApi
-			url: "/repos/#{repo.full_name}/commits/#{commit.sha}"
+			url: "/repos/#{repo.fullName}/commits/#{commit.sha}"
 		, (err, response, body) ->
 			changes = []
 			com = JSON.parse(body)
@@ -100,11 +104,8 @@ fetchCommit = (repo, commit) ->
 
 
 exports.startJobs = ->
-	setInterval ( ->
-		doSearchJobs = searchJobs[...globals.searchRequestsPerMinute]
-		searchJobs = searchJobs[globals.searchRequestsPerMinute...]
-		doApiJobs = apiJobs[...globals.apiRequestsPerMinute]
-		apiJobs = apiJobs[globals.apiRequestsPerMinute...]
-		doSearchJobs.forEach (job) -> job()
-		doApiJobs.forEach (job) -> job()
-	), 60 * 1000
+	do doTask = ->
+		console.log "#{searchJobs.length} Search Jobs and #{apiJobs.length} API Jobs in queue"
+		searchJobs.shift()?() for i in [0 ... globals.searchRequestsPerMinute]
+		apiJobs.shift()?() for i in [0 ... globals.apiRequestsPerMinute]
+	setInterval doTask, 1000 * 60 # Runs every minute
