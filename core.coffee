@@ -1,6 +1,7 @@
 request = require "request"
 async = require "async"
-db = require "db"
+db = require "./db"
+mapper = require "./mapper"
 
 globals =
 	searchRequestsPerMinute: 20
@@ -65,7 +66,7 @@ fetchRepoCommits = (repo, date) ->
 		, (err, response, body) ->
 			items = JSON.parse(body)
 			items.forEach (item) ->
-				getUserOrCreateUser (item.author.login, user) ->
+				getUserOrCreateUser item.author.login, (err, user) ->
 					commit = new db.Commit
 						sha: item.sha
 						author: user._id
@@ -91,6 +92,12 @@ fetchCommit = (repo, commit) ->
 		githubApi
 			url: "/repos/#{repo.full_name}/commits/#{commit.sha}"
 		, (err, response, body) ->
+			changes = []
+			com = JSON.parse(body)
+			items = com.files
+			items.forEach (item) ->
+				mapper.getLanguage
+
 
 exports.startJobs = ->
 	setInterval ( ->
