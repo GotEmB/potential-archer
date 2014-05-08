@@ -69,16 +69,20 @@ fetchRepoCommits = (repo, date = "") ->
 				per_page: 100
 		, (err, response, body) ->
 			items = JSON.parse(body)
-			items.forEach (item) ->
-				getUserOrCreateUser item.author.login, (err, user) ->
-					commit = new db.Commit
-						sha: item.sha
-						author: user._id
-						repository: repo._id
-						timestamp: item.commit.author.date
-					commit.save(err, commit) ->
-						if not err?
-							exports.fetchCommit repo, commit
+			if items.length > 0
+				items.forEach (item) ->
+					date = item.commit.author.date
+					getUserOrCreateUser item.author.login, (err, user) ->
+						commit = new db.Commit
+							sha: item.sha
+							author: user._id
+							repository: repo._id
+							timestamp: item.commit.author.date
+						commit.save(err, commit) ->
+							if not err?
+								exports.fetchCommit repo, commit
+				fetchRepoCommits repo, date
+
 
 getUserOrCreateUser = (username, callback) ->
 	db.User.findOneAndUpdate {username: username}, {$setOnInsert: username: username}, upsert: true, (err, user) ->
