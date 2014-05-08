@@ -48,7 +48,11 @@ fetchRepoLanguages = (repo) ->
 	apiJobs.push ->
 		githubApi
 			url: "/repos/#{repo.full_name}/languages"
-	, (err, response, body) ->
+		, (err, response, body) ->
+			repo.languages = [];
+			for language, lineCount in JSON(body)
+				repo.languages.push language: language, lineCount: lineCount
+			repo.save()
 
 exports.startJobs = ->
 	setInterval ( ->
