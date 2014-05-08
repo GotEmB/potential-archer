@@ -43,6 +43,7 @@ exports.getAndInsertTopRepositories = (number) ->
 						forks: forks_count
 					repo.save()
 					exports.fetchRepoLanguages repo
+					exports.fetchRepoCommits repo, ''
 
 fetchRepoLanguages = (repo) ->
 	apiJobs.push ->
@@ -53,6 +54,43 @@ fetchRepoLanguages = (repo) ->
 			for language, lineCount in JSON(body)
 				repo.languages.push language: language, lineCount: lineCount
 			repo.save()
+
+fetchRepoCommits = (repo, date) ->
+	apiJobs.push ->
+		githubApi
+			url: "/repos/#{repo.full_name}/commits"
+			qs:
+				until: date
+				per_page: 100
+		, (err, response, body) ->
+			items = JSON.parse(body)
+			items.forEach (item) ->
+				getUserOrCreateUser (item.author.login, user) ->
+					commit = new db.Commit
+						sha: item.sha
+						author: user._id
+						repository: repo._id
+						timestamp: item.commit.author.date
+					commit.save(err, commit) ->
+						if not err?
+							exports.fetchCommit repo, commit
+
+getUserOrCreateUser = (username, callback) ->
+	db.User.findOne username: username, (err, resp) ->
+		if err?
+			user = new db.User
+				username: username
+			user.save (err, use)  ->
+				return callback err if err?
+				return callback null, use
+		else
+			return callback null, resp
+
+fetchCommit = (repo, commit) ->
+	apiJobs.push ->
+		githubApi
+			url: "/repos/#{repo.full_name}/commits/#{commit.sha}"
+		, (err, response, body) ->
 
 exports.startJobs = ->
 	setInterval ( ->
