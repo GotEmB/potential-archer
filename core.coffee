@@ -72,16 +72,20 @@ fetchRepoCommits = (repo, date = "") ->
 				per_page: 100
 		, (err, response, body) ->
 			items = JSON.parse(body)
-			items.forEach (item) ->
-				getUserOrCreateUser item.author.login, (err, user) ->
-					commit = new db.Commit
-						sha: item.sha
-						author: user._id
-						repository: repo._id
-						timestamp: item.commit.author.date
-					commit.save(err, commit) ->
-						if not err?
-							exports.fetchCommit repo, commit
+			if items.length > 0
+				items.forEach (item) ->
+					date = item.commit.author.date
+					getUserOrCreateUser item.author.login, (err, user) ->
+						commit = new db.Commit
+							sha: item.sha
+							author: user._id
+							repository: repo._id
+							timestamp: item.commit.author.date
+						commit.save(err, commit) ->
+							if not err?
+								exports.fetchCommit repo, commit
+				fetchRepoCommits repo, date
+
 
 getUserOrCreateUser = (username, callback) ->
 	db.User.findOneAndUpdate {username: username}, {$setOnInsert: username: username}, upsert: true, new: true, (err, user) ->
@@ -96,8 +100,14 @@ fetchCommit = (repo, commit) ->
 			com = JSON.parse(body)
 			items = com.files
 			items.forEach (item) ->
-				mapper.getLanguage
-
+				fileName = item.fileName
+				changesMade = item.changes
+				language = mapper.getLanguage fileName.substring fileName.lastIndexOf(".")
+				db.Commit.findAndModify {sha: item.sha}, {$addToSet: {changes: {language: language}}}, {new:true} (err, resp) ->
+					if !err
+						db.Commit.findAndModify {sha: item.sha, "changes.language": language }, {$inc: {"changes.$.count": changesMade}}, {new: true} , (err, resp) ->
+							if !err
+								console.log "Successfully inserted commit"
 
 exports.startJobs = ->
 	intervalDescriptor = null
