@@ -41,6 +41,7 @@ exports.getAndInsertTopRepositories = (number) ->
 						forks: item.forks_count
 					repo.save (err, repo) ->
 						fetchRepoLanguages repo
+						fetchRepoCommits repo
 						callback()
 				, ->
 					console.log "Saved #{items.length} repositories of Top Repositories from page #{page}"
@@ -57,6 +58,43 @@ fetchRepoLanguages = (repo) ->
 				languages.push language: language, lineCount: lineCount
 			db.Repository.update {_id: repo._id}, languages: languages, (err, count) ->
 				console.log "Saved language statistics for repo #{repo.fullName}"
+
+fetchRepoCommits = (repo, date = "") ->
+	apiJobs.push ->
+		githubApi
+			url: "/repos/#{repo.full_name}/commits"
+			qs:
+				until: date
+				per_page: 100
+		, (err, response, body) ->
+			items = JSON.parse(body)
+			items.forEach (item) ->
+				getUserOrCreateUser (item.author.login, user) ->
+					commit = new db.Commit
+						sha: item.sha
+						author: user._id
+						repository: repo._id
+						timestamp: item.commit.author.date
+					commit.save(err, commit) ->
+						if not err?
+							exports.fetchCommit repo, commit
+
+getUserOrCreateUser = (username, callback) ->
+	db.User.findOne username: username, (err, resp) ->
+		if err?
+			user = new db.User
+				username: username
+			user.save (err, use)  ->
+				return callback err if err?
+				return callback null, use
+		else
+			return callback null, resp
+
+fetchCommit = (repo, commit) ->
+	apiJobs.push ->
+		githubApi
+			url: "/repos/#{repo.fullName}/commits/#{commit.sha}"
+		, (err, response, body) ->
 
 exports.startJobs = ->
 	do doTask = ->
