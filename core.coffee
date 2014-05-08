@@ -81,15 +81,8 @@ fetchRepoCommits = (repo, date = "") ->
 							exports.fetchCommit repo, commit
 
 getUserOrCreateUser = (username, callback) ->
-	db.User.findOne username: username, (err, resp) ->
-		if err?
-			user = new db.User
-				username: username
-			user.save (err, use)  ->
-				return callback err if err?
-				return callback null, use
-		else
-			return callback null, resp
+	db.User.findOneAndUpdate {username: username}, {$setOnInsert: username: username}, upsert: true, (err, user) ->
+		callback err, user
 
 fetchCommit = (repo, commit) ->
 	apiJobs.push ->
