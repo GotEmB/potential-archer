@@ -22,7 +22,7 @@ githubApi = ({url, qs} = {}, callback) ->
 
 access_tokens = []
 try
-	access_tokens.push fs.readFileSync("access_tokens.txt", encoding: "utf8").split /[\r\n]+/g
+	access_tokens = fs.readFileSync("access_tokens.txt", encoding: "utf8").split(/[\r\n]+/g).filter (x) -> x isnt ""
 catch e
 	access_tokens = [process.env.GH_ACCESS_TOKEN]
 
