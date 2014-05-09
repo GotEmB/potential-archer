@@ -29,7 +29,7 @@ catch e
 searchJobs = new JobQueue
 apiJobs = new JobQueue
 searchJobs.addAccessTokensWithRateLimit access_tokens, 20, 60
-apiJobs.addAccessTokensWithRateLimit access_tokens, 5000, 60 * 60
+apiJobs.addAccessTokensWithRateLimit access_tokens, 82, 60
 
 exports.getAndInsertTopRepositories = (number) ->
 	[1 .. Math.ceil(number / 100)].forEach (page) ->
