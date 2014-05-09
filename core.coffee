@@ -37,15 +37,13 @@ exports.getAndInsertTopRepositories = (number) ->
 				items = JSON.parse(body).items
 				async.each items, (item, callback) ->
 					db.Repository.findOneAndUpdate {fullName: item.full_name},
-						$setOnInsert:
-							fullName: item.full_name
-						$set:
-							stars: item.stargazers_count
-							forks: item.forks_count
+						fullName: item.full_name
+						stars: item.stargazers_count
+						forks: item.forks_count
 					, upsert: true, new: true
 					, (err, repo) ->
 						fetchRepoLanguages repo
-						# fetchRepoCommits repo
+						fetchRepoCommits repo
 						callback()
 				, ->
 					console.log "Saved #{items.length} repositories of Top Repositories from page #{page}"
@@ -64,50 +62,64 @@ fetchRepoLanguages = (repo) ->
 				console.log "Saved language statistics for repo #{repo.fullName}"
 
 fetchRepoCommits = (repo, date = "") ->
+	console.log "Adding API Job to fetch commits for repo #{repo.fullName}"
 	apiJobs.push ->
-		githubApi
-			url: "/repos/#{repo.full_name}/commits"
+		console.log "Fetching commits for repo #{repo.fullName}"
+		githubApi opts =
+			url: "/repos/#{repo.fullName}/commits"
 			qs:
 				until: date
 				per_page: 100
 		, (err, response, body) ->
 			items = JSON.parse(body)
 			if items.length > 0
-				items.forEach (item) ->
+				async.each items, (item, callback) ->
 					date = item.commit.author.date
+					return callback() unless item.author?
 					getUserOrCreateUser item.author.login, (err, user) ->
-						commit = new db.Commit
+						db.Commit.findOneAndUpdate {sha: item.sha},
 							sha: item.sha
 							author: user._id
 							repository: repo._id
 							timestamp: item.commit.author.date
-						commit.save(err, commit) ->
-							if not err?
-								exports.fetchCommit repo, commit
-				fetchRepoCommits repo, date
+						, upsert: true, new: true
+						, (err, commit) ->
+							fetchCommit repo, commit unless err?
+							callback()
+				, ->
+					console.log "Saved commits for repo #{repo.fullName}"
+					fetchRepoCommits repo, date
 
 
 getUserOrCreateUser = (username, callback) ->
-	db.User.findOneAndUpdate {username: username}, {$setOnInsert: username: username}, upsert: true, new: true, (err, user) ->
+	db.User.findOneAndUpdate {username: username}, {username: username}, upsert: true, new: true, (err, user) ->
 		callback err, user
 
 fetchCommit = (repo, commit) ->
+	console.log "Adding API Job to fetch commit #{commit.sha}"
 	apiJobs.push ->
+		console.log "Fetching commit #{commit.sha}"
 		githubApi
 			url: "/repos/#{repo.fullName}/commits/#{commit.sha}"
 		, (err, response, body) ->
 			changes = []
-			com = JSON.parse(body)
+			com = undefined
+			try
+				com = JSON.parse(body)
+			catch e
+				return console.error "Invalid JSON: ", body
 			items = com.files
-			items.forEach (item) ->
-				fileName = item.fileName
+			async.each items, (item, callback) ->
+				fileName = item.filename
 				changesMade = item.changes
-				language = mapper.getLanguage fileName.substring fileName.lastIndexOf(".")
-				db.Commit.findAndModify {sha: item.sha}, {$addToSet: {changes: {language: language}}}, {new:true} (err, resp) ->
-					if !err
-						db.Commit.findAndModify {sha: item.sha, "changes.language": language }, {$inc: {"changes.$.count": changesMade}}, {new: true} , (err, resp) ->
-							if !err
-								console.log "Successfully inserted commit"
+				language = mapper.getLanguage fileName.substring fileName.lastIndexOf "."
+				db.Commit.findOneAndUpdate {_id: commit._id}, {$addToSet: {changes: {language: language}}}, new: true, (err, resp) ->
+					return callback err if err?
+					db.Commit.findOneAndUpdate {_id: commit._id, "changes.language": language }, {$inc: {"changes.$.count": changesMade}}, new: true, (err, resp) ->
+						return callback err if err?
+						callback()
+			, ->
+				console.log "Saved commit #{commit.sha}"
 
 exports.startJobs = ->
 	intervalDescriptor = null
@@ -116,5 +128,6 @@ exports.startJobs = ->
 		clearInterval intervalDescriptor if searchJobs.length is 0 and apiJobs.length is 0
 		searchJobs.shift()?() for i in [0 ... globals.searchRequestsPerMinute]
 		apiJobs.shift()?() for i in [0 ... globals.apiRequestsPerMinute]
+		undefined
 	intervalDescriptor = setInterval doTask, 1000 * 60 # Runs every minute
 	doTask()
