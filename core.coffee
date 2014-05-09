@@ -102,13 +102,9 @@ fetchCommit = (repo, commit) ->
 		githubApi
 			url: "/repos/#{repo.fullName}/commits/#{commit.sha}"
 		, (err, response, body) ->
+			return console.error "Error at fetchCommit #{commit.sha}", err, response, body if err?
 			changes = []
-			com = undefined
-			try
-				com = JSON.parse(body)
-			catch e
-				return console.error "Invalid JSON: ", body
-			items = com.files
+			items = JSON.parse(body).files
 			async.each items, (item, callback) ->
 				fileName = item.filename
 				changesMade = item.changes
