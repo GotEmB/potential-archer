@@ -1,4 +1,4 @@
-request = require "request"
-async = require "async"
+require "./import-env"
 core = require "./core"
-db = require "./db"
+
+core.getAndInsertTopRepositories 10000

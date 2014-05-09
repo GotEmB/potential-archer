@@ -3,6 +3,7 @@ async = require "async"
 db = require "./db"
 mapper = require "./mapper"
 JobQueue = require "./job-queue"
+fs = require "fs"
 
 globals =
 	searchRequestsPerMinute: 20
@@ -19,12 +20,16 @@ githubApi = ({url, qs} = {}, callback) ->
 		qs: qs
 	, callback
 
-# searchJobs = []
-# apiJobs = []
+access_tokens = []
+try
+	access_tokens.push fs.readFileSync("access_tokens.txt", encoding: "utf8").split /[\r\n]+/g
+catch e
+	access_tokens = [process.env.GH_ACCESS_TOKEN]
+
 searchJobs = new JobQueue
 apiJobs = new JobQueue
-searchJobs.addAccessTokensWithRateLimit [process.env.GH_ACCESS_TOKEN], 20, 60
-apiJobs.addAccessTokensWithRateLimit [process.env.GH_ACCESS_TOKEN], 5000, 60 * 60
+searchJobs.addAccessTokensWithRateLimit access_tokens, 20, 60
+apiJobs.addAccessTokensWithRateLimit access_tokens, 5000, 60 * 60
 
 exports.getAndInsertTopRepositories = (number) ->
 	[1 .. Math.ceil(number / 100)].forEach (page) ->
@@ -136,16 +141,3 @@ fetchCommit = (repo, commit) ->
 				], callback
 			, ->
 				console.log "Saved commit #{commit.sha}"
-
-###
-exports.startJobs = ->
-	intervalDescriptor = null
-	doTask = ->
-		console.log "#{searchJobs.length} Search Jobs and #{apiJobs.length} API Jobs in queue"
-		clearInterval intervalDescriptor if searchJobs.length is 0 and apiJobs.length is 0
-		searchJobs.shift()?() for i in [0 ... globals.searchRequestsPerMinute]
-		apiJobs.shift()?() for i in [0 ... globals.apiRequestsPerMinute]
-		undefined
-	intervalDescriptor = setInterval doTask, 1000 * 60 # Runs every minute
-	doTask()
-###
