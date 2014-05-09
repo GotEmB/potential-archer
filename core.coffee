@@ -73,6 +73,8 @@ fetchRepoCommits = (repo, date = "") ->
 		, (err, response, body) ->
 			items = JSON.parse(body)
 			if items.length > 0
+				if date isnt ''
+					items.shift()
 				async.each items, (item, callback) ->
 					date = item.commit.author.date
 					return callback() unless item.author?
@@ -109,11 +111,20 @@ fetchCommit = (repo, commit) ->
 				fileName = item.filename
 				changesMade = item.changes
 				language = mapper.getLanguage fileName.substring fileName.lastIndexOf "."
-				db.Commit.findOneAndUpdate {_id: commit._id}, {$addToSet: {changes: {language: language}}}, new: true, (err, resp) ->
-					return callback err if err?
-					db.Commit.findOneAndUpdate {_id: commit._id, "changes.language": language }, {$inc: {"changes.$.count": changesMade}}, new: true, (err, resp) ->
-						return callback err if err?
-						callback()
+				async.parallel [
+					(callback) ->
+						db.Commit.findOneAndUpdate {_id: commit._id}, {$addToSet: {changes: {language: language}}}, new: true, (err, resp) ->
+							return callback err if err?
+							db.Commit.findOneAndUpdate {_id: commit._id, "changes.language": language }, {$inc: {"changes.$.count": changesMade}}, new: true, (err, resp) ->
+								return callback err if err?
+								callback()
+					, (callback) ->
+						db.Repository.findOneAndUpdate {_id: repo._id}, {$addToSet: {contributors: {user: commit.author}}}, new: true, (err, resp) ->
+							return callback err if err?
+							db.Repository.findOneAndUpdate {_id: repo._id, "contributors.author": commit.author }, {$inc: {"contributors.$.weight": changesMade}}, new: true, (err, resp) ->
+								return callback err if err?
+								callback()
+				], callback
 			, ->
 				console.log "Saved commit #{commit.sha}"
 

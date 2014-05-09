@@ -18,7 +18,10 @@ exports.Repository = mongoose.model "Repository",
 	fullName: String
 	stars: Number
 	forks: Number
-	contributors: [type: mongoose.Schema.ObjectId, ref: "User"]
+	contributors: [
+		user: type: mongoose.Schema.ObjectId, ref: "User"
+		weigth: Number
+	]
 	languages: [
 		language: String
 		lineCount: Number
