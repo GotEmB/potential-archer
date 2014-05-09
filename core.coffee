@@ -84,7 +84,7 @@ fetchRepoCommits = (repo, date = "") ->
 				per_page: 100
 		, (err, response, body) ->
 			return console.error "Error at fetchRepoCommits for repo #{repo.fullName}", err, response, body if err?
-			items = JSON.parse(body)
+			items = JSON.parse(body) ? []
 			if items.length > 0
 				if date isnt ''
 					items.shift()
@@ -120,7 +120,7 @@ fetchCommit = (repo, commit) ->
 		, (err, response, body) ->
 			return console.error "Error at fetchCommit #{commit.sha}", err, response, body if err?
 			changes = []
-			items = JSON.parse(body).files
+			items = JSON.parse(body).files ? []
 			async.each items, (item, callback) ->
 				fileName = item.filename
 				changesMade = item.changes
