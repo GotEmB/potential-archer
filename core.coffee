@@ -45,7 +45,7 @@ exports.getAndInsertTopRepositories = (number) ->
 					page: page
 			, (err, response, body) ->
 				return console.error "Error at getAndInsertTopRepositories on page #{page}", err, response, body if err?
-				items = JSON.parse(body).items
+				items = JSON.parse(body).items ? []
 				async.each items, (item, callback) ->
 					db.Repository.findOneAndUpdate {fullName: item.full_name},
 						fullName: item.full_name
