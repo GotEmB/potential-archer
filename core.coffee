@@ -92,6 +92,7 @@ fetchRepoCommits = (repo, date = "") ->
 					date = item.commit.author.date
 					return callback() unless item.author?
 					getUserOrCreateUser item.author.login, (err, user) ->
+						return callback() unless user?
 						db.Commit.findOneAndUpdate {sha: item.sha},
 							sha: item.sha
 							author: user._id
