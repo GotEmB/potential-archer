@@ -3,7 +3,7 @@ class JobQueue
 		@accessTokens = []
 	addAccessTokensWithRateLimit: (tokens, limit, period) ->
 		@accessTokens.push tokens.map((x) -> new AccessToken x, limit, period)...
-	addToQueue: (jobs...) ->
+	push: (jobs...) ->
 		jobs.forEach (job) =>
 			sts =
 				@accessTokens

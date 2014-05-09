@@ -20,7 +20,7 @@ exports.Repository = mongoose.model "Repository",
 	forks: Number
 	contributors: [
 		user: type: mongoose.Schema.ObjectId, ref: "User"
-		weigth: Number
+		weight: Number
 	]
 	languages: [
 		language: String

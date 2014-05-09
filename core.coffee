@@ -2,6 +2,7 @@ request = require "request"
 async = require "async"
 db = require "./db"
 mapper = require "./mapper"
+JobQueue = require "./job-queue"
 
 globals =
 	searchRequestsPerMinute: 20
@@ -18,8 +19,12 @@ githubApi = ({url, qs} = {}, callback) ->
 		qs: qs
 	, callback
 
-searchJobs = []
-apiJobs = []
+# searchJobs = []
+# apiJobs = []
+searchJobs = new JobQueue
+apiJobs = new JobQueue
+searchJobs.addAccessTokensWithRateLimit [process.env.GH_ACCESS_TOKEN], 20, 60
+apiJobs.addAccessTokensWithRateLimit [process.env.GH_ACCESS_TOKEN], 5000, 60 * 60
 
 exports.getAndInsertTopRepositories = (number) ->
 	[1 .. Math.ceil(number / 100)].forEach (page) ->
@@ -34,6 +39,7 @@ exports.getAndInsertTopRepositories = (number) ->
 					per_page: Math.min 100, number - (page - 1) * 100
 					page: page
 			, (err, response, body) ->
+				return console.error "Error at getAndInsertTopRepositories on page #{page}", err, response, body if err?
 				items = JSON.parse(body).items
 				async.each items, (item, callback) ->
 					db.Repository.findOneAndUpdate {fullName: item.full_name},
@@ -55,6 +61,7 @@ fetchRepoLanguages = (repo) ->
 		githubApi
 			url: "/repos/#{repo.fullName}/languages"
 		, (err, response, body) ->
+			return console.error "Error at fetchRepoLanguages for repo #{repo.fullName}", err, response, body if err?
 			languages = []
 			for language, lineCount of JSON.parse body
 				languages.push language: language, lineCount: lineCount
@@ -71,6 +78,7 @@ fetchRepoCommits = (repo, date = "") ->
 				until: date
 				per_page: 100
 		, (err, response, body) ->
+			return console.error "Error at fetchRepoCommits for repo #{repo.fullName}", err, response, body if err?
 			items = JSON.parse(body)
 			if items.length > 0
 				if date isnt ''
@@ -120,14 +128,16 @@ fetchCommit = (repo, commit) ->
 								callback()
 					, (callback) ->
 						db.Repository.findOneAndUpdate {_id: repo._id}, {$addToSet: {contributors: {user: commit.author}}}, new: true, (err, resp) ->
+							console.log err, resp if err?
 							return callback err if err?
-							db.Repository.findOneAndUpdate {_id: repo._id, "contributors.author": commit.author }, {$inc: {"contributors.$.weight": changesMade}}, new: true, (err, resp) ->
+							db.Repository.findOneAndUpdate {_id: repo._id, "contributors.user": commit.author }, {$inc: {"contributors.$.weight": changesMade}}, new: true, (err, resp) ->
 								return callback err if err?
 								callback()
 				], callback
 			, ->
 				console.log "Saved commit #{commit.sha}"
 
+###
 exports.startJobs = ->
 	intervalDescriptor = null
 	doTask = ->
@@ -138,3 +148,4 @@ exports.startJobs = ->
 		undefined
 	intervalDescriptor = setInterval doTask, 1000 * 60 # Runs every minute
 	doTask()
+###
