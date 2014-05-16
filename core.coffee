@@ -2,7 +2,7 @@ request = require "request"
 async = require "async"
 db = require "./db"
 mapper = require "./mapper"
-JobQueue = require "./job-queue"
+JobQueue = require "job-queue"
 fs = require "fs"
 
 globals =
@@ -11,8 +11,8 @@ globals =
 	apiRootUrl: "https://api.github.com"
 
 githubApi = ({url, qs} = {}, callback) ->
+	return callback err: "No API endpoint specified" unless url?
 	qs ?= {}
-	qs.access_token = process.env.GH_ACCESS_TOKEN
 	request
 		method: "GET"
 		headers: 'User-Agent': "request"
@@ -26,15 +26,13 @@ try
 catch e
 	access_tokens = [process.env.GH_ACCESS_TOKEN]
 
-searchJobs = new JobQueue
-apiJobs = new JobQueue
-searchJobs.addAccessTokensWithRateLimit access_tokens, 20, 60
-apiJobs.addAccessTokensWithRateLimit access_tokens, 82, 60
+searchJobs = new JobQueue access_tokens.map((x) -> (request) -> request x), 20, 60
+apiJobs = new JobQueue access_tokens.map((x) -> (request) -> request x), 82, 60
 
 exports.getAndInsertTopRepositories = (number) ->
 	[1 .. Math.ceil(number / 100)].forEach (page) ->
 		console.log "Adding Search Job to fetch page #{page} of Top Repositories"
-		searchJobs.push ->
+		searchJobs.enqueue (access_token) ->
 			console.log "Fetching page #{page} of Top Repositories"
 			githubApi
 				url: "/search/repositories"
@@ -43,6 +41,7 @@ exports.getAndInsertTopRepositories = (number) ->
 					sort: "stars"
 					per_page: Math.min 100, number - (page - 1) * 100
 					page: page
+					access_token: access_token
 			, (err, response, body) ->
 				return console.error "Error at getAndInsertTopRepositories on page #{page}", err, response, body if err?
 				items = JSON.parse(body).items ? []
@@ -61,10 +60,12 @@ exports.getAndInsertTopRepositories = (number) ->
 
 fetchRepoLanguages = (repo) ->
 	console.log "Adding API Job to fetch language statistics for repo #{repo.fullName}"
-	apiJobs.push ->
+	apiJobs.enqueue (access_token) ->
 		console.log "Fetching language statistics for repo #{repo.fullName}"
 		githubApi
 			url: "/repos/#{repo.fullName}/languages"
+			qs:
+				access_token: access_token
 		, (err, response, body) ->
 			return console.error "Error at fetchRepoLanguages for repo #{repo.fullName}", err, response, body if err?
 			languages = []
@@ -75,20 +76,21 @@ fetchRepoLanguages = (repo) ->
 
 fetchRepoCommits = (repo, date = "") ->
 	console.log "Adding API Job to fetch commits for repo #{repo.fullName}"
-	apiJobs.push ->
+	apiJobs.enqueue (access_token) ->
 		console.log "Fetching commits for repo #{repo.fullName}"
 		githubApi opts =
 			url: "/repos/#{repo.fullName}/commits"
 			qs:
 				until: date
 				per_page: 100
+				access_token: access_token
 		, (err, response, body) ->
 			return console.error "Error at fetchRepoCommits for repo #{repo.fullName}", err, response, body if err?
 			items = JSON.parse(body) ? []
 			if items.length > 0
 				if date isnt ''
 					items.shift()
-				async.each items, (item, callback) ->
+				async.eachSeries items, (item, callback) ->
 					date = item.commit.author.date
 					return callback() unless item.author?
 					getUserOrCreateUser item.author.login, (err, user) ->
@@ -101,7 +103,7 @@ fetchRepoCommits = (repo, date = "") ->
 						, upsert: true, new: true
 						, (err, commit) ->
 							fetchCommit repo, commit unless err?
-							callback()
+							process.nextTick callback
 				, ->
 					console.log "Saved commits for repo #{repo.fullName}"
 					fetchRepoCommits repo, date
@@ -113,10 +115,12 @@ getUserOrCreateUser = (username, callback) ->
 
 fetchCommit = (repo, commit) ->
 	console.log "Adding API Job to fetch commit #{commit.sha}"
-	apiJobs.push ->
+	apiJobs.enqueue (access_token) ->
 		console.log "Fetching commit #{commit.sha}"
 		githubApi
 			url: "/repos/#{repo.fullName}/commits/#{commit.sha}"
+			qs:
+				access_token: access_token
 		, (err, response, body) ->
 			return console.error "Error at fetchCommit #{commit.sha}", err, response, body if err?
 			changes = []

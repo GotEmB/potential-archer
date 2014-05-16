@@ -1,3 +1,5 @@
+require("look").start()
+
 require "./import-env"
 core = require "./core"
 
