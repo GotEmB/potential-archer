@@ -125,7 +125,7 @@ fetchCommit = (repo, commit) ->
 			return console.error "Error at fetchCommit #{commit.sha}", err, response, body if err?
 			changes = []
 			items = JSON.parse(body).files ? []
-			async.each items, (item, callback) ->
+			async.eachSeries items, (item, callback) ->
 				fileName = item.filename
 				changesMade = item.changes
 				language = mapper.getLanguage fileName.substring fileName.lastIndexOf "."
@@ -142,7 +142,7 @@ fetchCommit = (repo, commit) ->
 							return callback err if err?
 							db.Repository.findOneAndUpdate {_id: repo._id, "contributors.user": commit.author }, {$inc: {"contributors.$.weight": changesMade}}, new: true, (err, resp) ->
 								return callback err if err?
-								callback()
+								process.nextTick callback
 				], callback
 			, ->
 				console.log "Saved commit #{commit.sha}"
