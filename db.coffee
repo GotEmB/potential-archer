@@ -26,6 +26,7 @@ exports.Repository = mongoose.model "Repository",
 		language: String
 		lineCount: Number
 	]
+	updated: Number
 
 exports.Commit = mongoose.model "Commit",
 	sha: String
