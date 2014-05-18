@@ -51,7 +51,12 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 					page: page
 					access_token: access_token
 			, (err, response, body) ->
-				return winston.error "Error at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", err, response, body if err?
+				if err?
+					winston.error "Error at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", err, response, body
+					return callback()
+				if response.statusCode >= 400
+					winston.error "Bad response at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", body
+					return callback()
 				items = JSON.parse(body)?.items
 				unless items?
 					winston.error "Field items does not exist at getAndInsertTopRepositories on page #{page} with stars <= #{stars}"
@@ -97,6 +102,9 @@ fetchRepoLanguages = (repo, callback) ->
 			if err?
 				winston.error "Error at fetchRepoLanguages for repo #{repo.fullName}", err, response, body
 				return callback()
+			if response.statusCode >= 400
+				winston.error "Bad response at fetchRepoLanguages for repo #{repo.fullName}", body
+				return callback()
 			languages = []
 			for language, lineCount of JSON.parse body
 				languages.push language: language, lineCount: lineCount
@@ -118,6 +126,9 @@ fetchRepoCommits = (repo, date = "", callback) ->
 		, (err, response, body) ->
 			if err?
 				winston.error "Error at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", err, response, body
+				return callback()
+			if response.statusCode >= 400
+				winston.error "Bad response at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", body
 				return callback()
 			items = JSON.parse body
 			unless items?
@@ -160,7 +171,12 @@ fetchCommit = (repo, commit, callback) ->
 			qs:
 				access_token: access_token
 		, (err, response, body) ->
-			return callback() winston.error "Error at fetchCommit #{commit.sha}", err, response, body if err?
+			if err?
+				winston.error "Error at fetchCommit #{commit.sha}", err, response, body
+				return callback()
+			if response.statusCode >= 400
+				winston.error "Bad response at fetchCommit #{commit.sha}", body
+				return callback()
 			changes = []
 			items = JSON.parse(body)?.files
 			unless items?
