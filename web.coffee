@@ -1,4 +1,8 @@
 require "./import-env"
 core = require "./core"
+getCreds = require "./get-creds"
 
-core.getAndInsertTopRepositories 10000
+getCreds (err, creds) ->
+	return console.error err if err?
+	core.setCreds creds
+	core.getAndInsertTopRepositories 1

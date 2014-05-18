@@ -11,26 +11,25 @@ winston.add winston.transports.File, filename: "winston.log"
 globals =
 	searchRequestsPerMinute: 20
 	apiRequestsPerMinute: 80
-	apiRootUrl: "https://api.github.com"
+	apiRootUrl: (cred) -> "https://#{cred.login}:#{cred.password}@api.github.com"
 
-githubApi = ({url, qs} = {}, callback) ->
+githubApi = ({url, qs, cred} = {}, callback) ->
 	return callback err: "No API endpoint specified" unless url?
 	qs ?= {}
 	request
 		method: "GET"
 		headers: 'User-Agent': "request"
-		url: globals.apiRootUrl + url
+		url: globals.apiRootUrl(cred) + url
 		qs: qs
 	, callback
 
-access_tokens =
-	try
-		fs.readFileSync("access_tokens.txt", encoding: "utf8").split(/[\r\n]+/g).filter (x) -> x isnt ""
-	catch
-		[process.env.GH_ACCESS_TOKEN]
+searchJobs = undefined
+apiJobs = undefined
 
-searchJobs = new JobQueue access_tokens.map((x) -> (request) -> request x), 20, 60
-apiJobs = new JobQueue access_tokens.map((x) -> (request) -> request x), 82, 60
+exports.setCreds = (creds) ->
+	console.log "Setting Credentials"
+	searchJobs = new JobQueue creds.map((x) -> (request) -> request x), 20, 60
+	apiJobs = new JobQueue creds.map((x) -> (request) -> request x), 82, 60
 
 exports.getAndInsertTopRepositories = (number) ->
 	fetchRepos number, 1 << 20, ->
@@ -40,7 +39,7 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 	minStars = Infinity
 	async.eachSeries [1 .. 10], (page, callback) ->
 		winston.info "Adding Search Job to fetch page #{page} of Top Repositories with stars <= #{stars}"
-		searchJobs.enqueue (access_token) ->
+		searchJobs.enqueue (cred) ->
 			winston.info "Fetching page #{page} of Top Repositories with stars <= #{stars}"
 			githubApi
 				url: "/search/repositories"
@@ -49,7 +48,7 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 					sort: "stars"
 					per_page: 100
 					page: page
-					access_token: access_token
+				cred: cred
 			, (err, response, body) ->
 				if err?
 					winston.error "Error at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", err, response, body
@@ -92,12 +91,11 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 
 fetchRepoLanguages = (repo, callback) ->
 	winston.info "Adding API Job to fetch language statistics for repo #{repo.fullName}"
-	apiJobs.enqueue (access_token) ->
+	apiJobs.enqueue (cred) ->
 		winston.info "Fetching language statistics for repo #{repo.fullName}"
 		githubApi
 			url: "/repos/#{repo.fullName}/languages"
-			qs:
-				access_token: access_token
+			cred: cred
 		, (err, response, body) ->
 			if err?
 				winston.error "Error at fetchRepoLanguages for repo #{repo.fullName}", err, response, body
@@ -115,14 +113,14 @@ fetchRepoLanguages = (repo, callback) ->
 fetchRepoCommits = (repo, date = "", callback) ->
 	logDate = if date is "" then "forever" else date
 	winston.info "Adding API Job to fetch commits for repo #{repo.fullName} since #{logDate}"
-	apiJobs.enqueue (access_token) ->
+	apiJobs.enqueue (cred) ->
 		winston.info "Fetching commits for repo #{repo.fullName} since #{logDate}"
 		githubApi opts =
 			url: "/repos/#{repo.fullName}/commits"
 			qs:
 				until: date
 				per_page: 100
-				access_token: access_token
+			cred: cred
 		, (err, response, body) ->
 			if err?
 				winston.error "Error at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", err, response, body
@@ -164,12 +162,11 @@ getUserOrCreateUser = (username, callback) ->
 
 fetchCommit = (repo, commit, callback) ->
 	winston.info "Adding API Job to fetch commit #{commit.sha}"
-	apiJobs.enqueue (access_token) ->
+	apiJobs.enqueue (cred) ->
 		winston.info "Fetching commit #{commit.sha}"
 		githubApi
 			url: "/repos/#{repo.fullName}/commits/#{commit.sha}"
-			qs:
-				access_token: access_token
+			cred: cred
 		, (err, response, body) ->
 			if err?
 				winston.error "Error at fetchCommit #{commit.sha}", err, response, body
