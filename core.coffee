@@ -4,6 +4,9 @@ db = require "./db"
 mapper = require "./mapper"
 JobQueue = require "job-queue"
 fs = require "fs"
+winston = require "winston"
+
+winston.add winston.transports.File, filename: "winston.log"
 
 globals =
 	searchRequestsPerMinute: 20
@@ -31,14 +34,14 @@ apiJobs = new JobQueue access_tokens.map((x) -> (request) -> request x), 82, 60
 
 exports.getAndInsertTopRepositories = (number) ->
 	fetchRepos number, 1 << 20, ->
-		console.log "All done!"
+		winston.info "All done!"
 
 fetchRepos = (totalRepos = 1000, stars, callback) ->
-	maxStars = 0
+	minStars = Infinity
 	async.eachSeries [1 .. 10], (page, callback) ->
-		console.log "Adding Search Job to fetch page #{page} of Top Repositories with stars <= #{stars}"
+		winston.info "Adding Search Job to fetch page #{page} of Top Repositories with stars <= #{stars}"
 		searchJobs.enqueue (access_token) ->
-			console.log "Fetching page #{page} of Top Repositories"
+			winston.info "Fetching page #{page} of Top Repositories with stars <= #{stars}"
 			githubApi
 				url: "/search/repositories"
 				qs:
@@ -48,10 +51,13 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 					page: page
 					access_token: access_token
 			, (err, response, body) ->
-				return console.error "Error at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", err, response, body if err?
-				items = JSON.parse(body).items ? []
+				return winston.error "Error at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", err, response, body if err?
+				items = JSON.parse(body)?.items
+				unless items?
+					winston.error "Field items does not exist at getAndInsertTopRepositories on page #{page} with stars <= #{stars}"
+					return callback()
 				async.eachLimit items, 10, (item, callback) ->
-					maxStars = Math.max maxStars, item.stargazers_count
+					minStars = Math.min minStars, item.stargazers_count
 					db.Repository.findOneAndUpdate {fullName: item.full_name},
 						fullName: item.full_name
 						stars: item.stargazers_count
@@ -61,47 +67,48 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 					, upsert: true, new: true
 					, (err, repo) ->
 						if repo.updated isnt 1
-							console.log "Skipping repo #{repo.fullName}"
+							winston.info "Skipping repo #{repo.fullName}"
 							return callback()
 						async.parallel [
 							(callback) -> fetchRepoLanguages repo, callback
 							(callback) -> fetchRepoCommits repo, "", callback
 						], ->
-							console.log "Saved repository #{repo.fullName}"
+							winston.info "Saved repository #{repo.fullName}"
 							callback()
 				, ->
-					console.log "Saved #{items.length} repositories of Top Repositories from page #{page} with stars <= #{stars}"
+					winston.info "Saved #{items.length} repositories of Top Repositories from page #{page} with stars <= #{stars}"
 					callback()
 	, ->
 		db.Repository.count (err, count) ->
-			if count >= totalRepos
+			if count >= totalRepos or minStars is Infinity
 				callback()
 			else
-				fetchRepos totalRepos, (if maxStars is stars then maxStars - 1 else maxStars), callback
+				fetchRepos totalRepos, (if minStars is stars then minStars - 1 else minStars), callback
 
 fetchRepoLanguages = (repo, callback) ->
-	console.log "Adding API Job to fetch language statistics for repo #{repo.fullName}"
+	winston.info "Adding API Job to fetch language statistics for repo #{repo.fullName}"
 	apiJobs.enqueue (access_token) ->
-		console.log "Fetching language statistics for repo #{repo.fullName}"
+		winston.info "Fetching language statistics for repo #{repo.fullName}"
 		githubApi
 			url: "/repos/#{repo.fullName}/languages"
 			qs:
 				access_token: access_token
 		, (err, response, body) ->
 			if err?
-				console.error "Error at fetchRepoLanguages for repo #{repo.fullName}", err, response, body
+				winston.error "Error at fetchRepoLanguages for repo #{repo.fullName}", err, response, body
 				return callback()
 			languages = []
 			for language, lineCount of JSON.parse body
 				languages.push language: language, lineCount: lineCount
 			db.Repository.update {_id: repo._id}, languages: languages, (err, count) ->
-				console.log "Saved language statistics for repo #{repo.fullName}"
+				winston.info "Saved language statistics for repo #{repo.fullName}"
 				callback()
 
 fetchRepoCommits = (repo, date = "", callback) ->
-	console.log "Adding API Job to fetch commits for repo #{repo.fullName}"
+	logDate = if date is "" then "forever" else date
+	winston.info "Adding API Job to fetch commits for repo #{repo.fullName} since #{logDate}"
 	apiJobs.enqueue (access_token) ->
-		console.log "Fetching commits for repo #{repo.fullName}"
+		winston.info "Fetching commits for repo #{repo.fullName} since #{logDate}"
 		githubApi opts =
 			url: "/repos/#{repo.fullName}/commits"
 			qs:
@@ -110,9 +117,12 @@ fetchRepoCommits = (repo, date = "", callback) ->
 				access_token: access_token
 		, (err, response, body) ->
 			if err?
-				console.error "Error at fetchRepoCommits for repo #{repo.fullName}", err, response, body
+				winston.error "Error at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", err, response, body
 				return callback()
-			items = JSON.parse(body) ? []
+			items = JSON.parse body
+			unless items?
+				winston.error "Field items does not exist at fetchRepoCommits for repo #{repo.fullName} since #{logDate}"
+				return callback()
 			if items.length > 0
 				if date isnt ''
 					items.shift()
@@ -131,9 +141,9 @@ fetchRepoCommits = (repo, date = "", callback) ->
 							return callback() if err?
 							fetchCommit repo, commit, callback
 				, ->
-					console.log "Saved commits for repo #{repo.fullName}"
 					fetchRepoCommits repo, date, callback
 			else
+				winston.info "Saved commits for repo #{repo.fullName} since #{logDate}"
 				callback()
 
 
@@ -142,17 +152,20 @@ getUserOrCreateUser = (username, callback) ->
 		callback err, user
 
 fetchCommit = (repo, commit, callback) ->
-	console.log "Adding API Job to fetch commit #{commit.sha}"
+	winston.info "Adding API Job to fetch commit #{commit.sha}"
 	apiJobs.enqueue (access_token) ->
-		console.log "Fetching commit #{commit.sha}"
+		winston.info "Fetching commit #{commit.sha}"
 		githubApi
 			url: "/repos/#{repo.fullName}/commits/#{commit.sha}"
 			qs:
 				access_token: access_token
 		, (err, response, body) ->
-			return callback() console.error "Error at fetchCommit #{commit.sha}", err, response, body if err?
+			return callback() winston.error "Error at fetchCommit #{commit.sha}", err, response, body if err?
 			changes = []
-			items = JSON.parse(body).files ? []
+			items = JSON.parse(body)?.files
+			unless items?
+				winston.error "Field files.items does not exist at fetchCommit #{commit.sha}"
+				return callback()
 			async.each items, (item, callback) ->
 				fileName = item.filename
 				changesMade = item.changes
@@ -170,5 +183,5 @@ fetchCommit = (repo, commit, callback) ->
 								callback()
 				], callback
 			, ->
-				console.log "Saved commit #{commit.sha}"
+				winston.info "Saved commit #{commit.sha}"
 				callback()
