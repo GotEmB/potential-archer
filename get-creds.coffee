@@ -4,7 +4,7 @@ md5 = require "MD5"
 
 globals =
 	password: "abc123321"
-	totalCreds: 250
+	totalCreds: 1000
 
 generatedUsernames = []
 
