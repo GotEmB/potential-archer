@@ -39,7 +39,7 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 	minStars = Infinity
 	async.eachSeries [1 .. 10], (page, callback) ->
 		winston.info "Adding Search Job to fetch page #{page} of Top Repositories with stars <= #{stars}"
-		searchJobs.enqueue (cred) ->
+		searchJobs.enqueue thisJob = (cred) ->
 			winston.info "Fetching page #{page} of Top Repositories with stars <= #{stars}"
 			githubApi
 				url: "/search/repositories"
@@ -52,14 +52,14 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 			, (err, response, body) ->
 				if err?
 					winston.error "Error at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", err, response, body
-					return callback()
+					return searchJobs.enqueue thisJob
 				if response.statusCode >= 400
 					winston.error "Bad response at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", body
-					return callback()
+					return searchJobs.enqueue thisJob
 				items = JSON.parse(body)?.items
 				unless items?
 					winston.error "Field items does not exist at getAndInsertTopRepositories on page #{page} with stars <= #{stars}"
-					return callback()
+					return searchJobs.enqueue thisJob
 				async.eachLimit items, 10, (item, callback) ->
 					minStars = Math.min minStars, item.stargazers_count
 					db.Repository.findOneAndUpdate {fullName: item.full_name},
@@ -91,7 +91,7 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 
 fetchRepoLanguages = (repo, callback) ->
 	winston.info "Adding API Job to fetch language statistics for repo #{repo.fullName}"
-	apiJobs.enqueue (cred) ->
+	apiJobs.enqueue thisJob =  (cred) ->
 		winston.info "Fetching language statistics for repo #{repo.fullName}"
 		githubApi
 			url: "/repos/#{repo.fullName}/languages"
@@ -99,10 +99,10 @@ fetchRepoLanguages = (repo, callback) ->
 		, (err, response, body) ->
 			if err?
 				winston.error "Error at fetchRepoLanguages for repo #{repo.fullName}", err, response, body
-				return callback()
+				return apiJobs.enqueue thisJob
 			if response.statusCode >= 400
 				winston.error "Bad response at fetchRepoLanguages for repo #{repo.fullName}", body
-				return callback()
+				return apiJobs.enqueue thisJob
 			languages = []
 			for language, lineCount of JSON.parse body
 				languages.push language: language, lineCount: lineCount
@@ -113,7 +113,7 @@ fetchRepoLanguages = (repo, callback) ->
 fetchRepoCommits = (repo, date = "", callback) ->
 	logDate = if date is "" then "forever" else date
 	winston.info "Adding API Job to fetch commits for repo #{repo.fullName} since #{logDate}"
-	apiJobs.enqueue (cred) ->
+	apiJobs.enqueue thisJob = (cred) ->
 		winston.info "Fetching commits for repo #{repo.fullName} since #{logDate}"
 		githubApi opts =
 			url: "/repos/#{repo.fullName}/commits"
@@ -124,14 +124,14 @@ fetchRepoCommits = (repo, date = "", callback) ->
 		, (err, response, body) ->
 			if err?
 				winston.error "Error at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", err, response, body
-				return callback()
+				return apiJobs.enqueue thisJob
 			if response.statusCode >= 400
 				winston.error "Bad response at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", body
-				return callback()
+				return apiJobs.enqueue thisJob
 			items = JSON.parse body
 			unless items?
 				winston.error "Field items does not exist at fetchRepoCommits for repo #{repo.fullName} since #{logDate}"
-				return callback()
+				return apiJobs.enqueue thisJob
 			if items.length > 0
 				if date isnt ''
 					items.shift()
@@ -162,7 +162,7 @@ getUserOrCreateUser = (username, callback) ->
 
 fetchCommit = (repo, commit, callback) ->
 	winston.info "Adding API Job to fetch commit #{commit.sha}"
-	apiJobs.enqueue (cred) ->
+	apiJobs.enqueue thisJob = (cred) ->
 		winston.info "Fetching commit #{commit.sha}"
 		githubApi
 			url: "/repos/#{repo.fullName}/commits/#{commit.sha}"
@@ -170,15 +170,15 @@ fetchCommit = (repo, commit, callback) ->
 		, (err, response, body) ->
 			if err?
 				winston.error "Error at fetchCommit #{commit.sha}", err, response, body
-				return callback()
+				return apiJobs.enqueue thisJob
 			if response.statusCode >= 400
 				winston.error "Bad response at fetchCommit #{commit.sha}", body
-				return callback()
+				return apiJobs.enqueue thisJob
 			changes = []
 			items = JSON.parse(body)?.files
 			unless items?
 				winston.error "Field files.items does not exist at fetchCommit #{commit.sha}"
-				return callback()
+				return apiJobs.enqueue thisJob
 			async.each items, (item, callback) ->
 				fileName = item.filename
 				changesMade = item.changes
