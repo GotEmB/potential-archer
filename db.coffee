@@ -26,7 +26,8 @@ exports.Repository = mongoose.model "Repository",
 		language: String
 		lineCount: Number
 	]
-	updated: Number
+	done: Boolean
+	instanceId: String
 
 exports.Commit = mongoose.model "Commit",
 	sha: String
@@ -37,3 +38,7 @@ exports.Commit = mongoose.model "Commit",
 		count: Number
 	]
 	timestamp: Date
+
+exports.InstanceStatus = mongoose.model "InstanceStatus",
+	instanceId: String
+	alive: Boolean

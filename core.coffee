@@ -5,6 +5,8 @@ mapper = require "./mapper"
 JobQueue = require "job-queue"
 fs = require "fs"
 winston = require "winston"
+md5 = require "MD5"
+os = require "os"
 
 winston.add winston.transports.File, filename: "winston.log"
 
@@ -25,6 +27,8 @@ githubApi = ({url, qs, cred} = {}, callback) ->
 
 searchJobs = undefined
 apiJobs = undefined
+myInstanceId = undefined
+siblingInstanceStatuses = {}
 
 exports.setCreds = (creds) ->
 	console.log "Setting Credentials"
@@ -62,23 +66,32 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 					return searchJobs.enqueue thisJob
 				async.eachLimit items, 10, (item, callback) ->
 					minStars = Math.min minStars, item.stargazers_count
-					db.Repository.findOneAndUpdate {fullName: item.full_name},
-						fullName: item.full_name
-						stars: item.stargazers_count
-						forks: item.forks_count
-						$inc:
-							updated: 1
-					, upsert: true, new: true
-					, (err, repo) ->
-						if repo.updated isnt 1
-							winston.info "Skipping repo #{repo.fullName}"
-							return callback()
-						async.parallel [
-							(callback) -> fetchRepoLanguages repo, callback
-							(callback) -> fetchRepoCommits repo, "", callback
-						], ->
-							winston.info "Saved repository #{repo.fullName}"
-							callback()
+					do fetchOneRepo = ->
+						db.Repository.findOneAndUpdate {fullName: item.full_name},
+							fullName: item.full_name
+							stars: item.stargazers_count
+							forks: item.forks_count
+							$setOnInsert:
+								instanceId: myInstanceId
+						, upsert: true, new: true
+						, (err, repo) ->
+							if repo.done is true
+								winston.info "Skipping completed repo #{repo.fullName}"
+								return callback()
+							if repo.instanceId isnt myInstanceId
+								pingSiblingInstance repo.instanceId, (err, siblingAlive) ->
+									if siblingAlive
+										winston.info "Skipping repo #{repo.fullName} fetched by sibling instance"
+										return callback()
+									cleanRepo repo, (err) ->
+										fetchOneRepo()
+							async.parallel [
+								(callback) -> fetchRepoLanguages repo, callback
+								(callback) -> fetchRepoCommits repo, "", callback
+							], ->
+								db.Repository.update {_id: repo._id}, {done: true}, (err) ->
+									winston.info "Saved repository #{repo.fullName}"
+									callback()
 				, ->
 					winston.info "Saved #{items.length} repositories of Top Repositories from page #{page} with stars <= #{stars}"
 					callback()
@@ -198,3 +211,32 @@ fetchCommit = (repo, commit, callback) ->
 			, ->
 				winston.info "Saved commit #{commit.sha}"
 				callback()
+
+cleanRepo = (repo, callback) ->
+	db.Commit.remove repository: repo._id, (err) ->
+		if err?
+			winston.error "Error removing commits for repo #{repo.fullName}", err
+			return callback err
+		winston.info "Removed commits for repo #{repo.fullName}"
+		db.Repository.remove _id: repo._id, (err) ->
+			if err?
+				winston.error "Error removing repo #{repo.fullName}", err
+				return callback err
+			callback null
+
+pingSiblingInstance = (instanceId, callback) ->
+	return callback null, siblingInstanceStatuses[instanceId] if instanceId of siblingInstanceStatuses
+	instanceStatus = new db.InstanceStatus instanceId: instanceId
+	instanceStatus.save (err, instanceStatus) ->
+		if err?
+			winston.error "Error pinging instance #{instanceId}", err
+			return callback err
+		setTimeout (->
+			db.InstanceStatus.findByIdAndRemove instanceStatus._id, (err, instanceStatus) ->
+				siblingInstanceStatuses[instanceId] = instanceStatus.alive is true
+				callback null, siblingInstanceStatuses[instanceId]
+		), 5 * 1000
+
+do setup = ->
+	myInstanceId = md5 "instanceId #{os.hostname()} ya #{os.platform()} da #{os.uptime()} ya #{os.freemem()} da #{os.loadavg()} Parker!"
+	setInterval db.update({instanceId: myInstanceId}, {alive: true}, multi: true).exec, 2 * 1000
