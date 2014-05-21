@@ -79,7 +79,8 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 								winston.info "Skipping completed repo #{repo.fullName}"
 								return callback()
 							if repo.instanceId isnt myInstanceId
-								pingSiblingInstance repo.instanceId, (err, siblingAlive) ->
+								return pingSiblingInstance repo.instanceId, (err, siblingAlive) ->
+									winston.info "Checking if sibling instance fetching repo #{repo.fullName} is alive"
 									if siblingAlive
 										winston.info "Skipping repo #{repo.fullName} fetched by sibling instance"
 										return callback()
@@ -238,5 +239,7 @@ pingSiblingInstance = (instanceId, callback) ->
 		), 5 * 1000
 
 do setup = ->
-	myInstanceId = md5 "instanceId #{os.hostname()} ya #{os.platform()} da #{os.uptime()} ya #{os.freemem()} da #{os.loadavg()} Parker!"
-	setInterval db.update({instanceId: myInstanceId}, {alive: true}, multi: true).exec, 2 * 1000
+	myInstanceId = md5 "instanceId #{os.hostname()} ya #{os.platform()} da #{os.uptime()} ya #{os.freemem()} da #{os.loadavg()} #{new Date} #{Math.random()} Parker!"
+	setInterval (->
+		db.InstanceStatus.update({instanceId: myInstanceId}, {alive: true}, multi: true).exec()
+	), 2 * 1000
