@@ -7,7 +7,7 @@
     "async": "~0.8.0",
     "mongoose": "~3.8.8",
     "request": "~2.34.0",
-    "job-queue": "~0.0",
+    "job-queue": "~0.0.4",
     "winston": "~0.7.3",
     "zombie": "~1.4.1",
     "MD5": "~1.2.1"
