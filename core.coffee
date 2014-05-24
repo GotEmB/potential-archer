@@ -154,8 +154,9 @@ fetchRepoCommits = (commits, repo, date = "", callback) ->
 			if date isnt ""
 				items.shift()
 			if items.length > 0
+				newDate = ""
 				async.eachLimit items, 100, (item, callback) ->
-					date = item.commit.author.date
+					newDate = item.commit.author.date
 					return callback() unless item.author?
 					getUserOrCreateUser item.author.login, (err, user) ->
 						return callback() unless user?
@@ -166,7 +167,11 @@ fetchRepoCommits = (commits, repo, date = "", callback) ->
 							timestamp: item.commit.author.date
 						fetchCommit repo, commit, callback
 				, ->
-					fetchRepoCommits commits, repo, date, callback
+					if newDate isnt date
+						fetchRepoCommits commits, repo, newDate, callback
+					else
+						winston.info "Saved commits for repo #{repo.fullName} since #{logDate}"
+						callback()
 			else
 				winston.info "Saved commits for repo #{repo.fullName} since #{logDate}"
 				callback()
