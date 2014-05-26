@@ -39,9 +39,10 @@ exports.setCreds = (creds) ->
 	searchJobs = new JobQueue creds.map (cred) -> new GitHubApiConsumer cred
 	apiJobs = new JobQueue creds.map (cred) -> new GitHubApiConsumer cred
 
-exports.getAndInsertTopRepositories = (number) ->
+exports.getAndInsertTopRepositories = (number, callback) ->
 	fetchRepos number, 1 << 20, ->
 		winston.info "All done!"
+		callback?()
 
 fetchRepos = (totalRepos = 1000, stars, callback) ->
 	minStars = Infinity
@@ -78,6 +79,7 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 								instanceId: myInstanceId
 						, upsert: true, new: true
 						, (err, repo) ->
+							commits = []
 							if repo.done is true
 								winston.info "Skipping completed repo #{repo.fullName}"
 								return callback()
@@ -91,11 +93,15 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 										fetchOneRepo()
 							async.parallel [
 								(callback) -> fetchRepoLanguages repo, callback
-								(callback) -> fetchRepoCommits repo, "", callback
+								(callback) -> fetchRepoCommits commits, repo, "", callback
 							], ->
-								db.Repository.update {_id: repo._id}, {done: true}, (err) ->
-									winston.info "Saved repository #{repo.fullName}"
-									callback()
+								async.eachLimit commits, 100, (commit, callback) ->
+									commit.save callback
+								, ->
+									repo.done = true
+									repo.save (err) ->
+										winston.info "Saved repository #{repo.fullName}"
+										callback()
 				, ->
 					winston.info "Saved #{items.length} repositories of Top Repositories from page #{page} with stars <= #{stars}"
 					callback()
@@ -120,12 +126,11 @@ fetchRepoLanguages = (repo, callback) ->
 				return apiJobs.enqueue thisJob
 			languages = []
 			for language, lineCount of JSON.parse body
-				languages.push language: language, lineCount: lineCount
-			db.Repository.update {_id: repo._id}, languages: languages, (err, count) ->
-				winston.info "Saved language statistics for repo #{repo.fullName}"
-				callback()
+				repo.languages.push language: language, lineCount: lineCount
+			winston.info "Saved language statistics for repo #{repo.fullName}"
+			callback()
 
-fetchRepoCommits = (repo, date = "", callback) ->
+fetchRepoCommits = (commits, repo, date = "", callback) ->
 	logDate = if date is "" then "forever" else date
 	winston.info "Adding API Job to fetch commits for repo #{repo.fullName} since #{logDate}"
 	apiJobs.enqueue thisJob =
@@ -146,25 +151,27 @@ fetchRepoCommits = (repo, date = "", callback) ->
 			unless items?
 				winston.error "Field items does not exist at fetchRepoCommits for repo #{repo.fullName} since #{logDate}"
 				return apiJobs.enqueue thisJob
+			if date isnt ""
+				items.shift()
 			if items.length > 0
-				if date isnt ''
-					items.shift()
+				newDate = ""
 				async.eachLimit items, 100, (item, callback) ->
-					date = item.commit.author.date
+					newDate = item.commit.author.date
 					return callback() unless item.author?
 					getUserOrCreateUser item.author.login, (err, user) ->
 						return callback() unless user?
-						db.Commit.findOneAndUpdate {sha: item.sha},
+						commits.push commit = new db.Commit
 							sha: item.sha
 							author: user._id
 							repository: repo._id
 							timestamp: item.commit.author.date
-						, upsert: true, new: true
-						, (err, commit) ->
-							return callback() if err?
-							fetchCommit repo, commit, callback
+						fetchCommit repo, commit, callback
 				, ->
-					fetchRepoCommits repo, date, callback
+					if newDate isnt date
+						fetchRepoCommits commits, repo, newDate, callback
+					else
+						winston.info "Saved commits for repo #{repo.fullName} since #{logDate}"
+						callback()
 			else
 				winston.info "Saved commits for repo #{repo.fullName} since #{logDate}"
 				callback()
@@ -192,25 +199,20 @@ fetchCommit = (repo, commit, callback) ->
 			unless items?
 				winston.error "Field files.items does not exist at fetchCommit #{commit.sha}"
 				return apiJobs.enqueue thisJob
-			async.each items, (item, callback) ->
+			for item in items
 				fileName = item.filename
 				changesMade = item.changes
 				language = mapper.getLanguage fileName.substring fileName.lastIndexOf "."
-				async.parallel [
-					(callback) ->
-						db.Commit.update {_id: commit._id}, {$addToSet: {changes: {language: language}}}, (err, resp) ->
-							return callback() if err?
-							db.Commit.update {_id: commit._id, "changes.language": language }, {$inc: {"changes.$.count": changesMade}}, (err, resp) ->
-								callback()
-					(callback) ->
-						db.Repository.update {_id: repo._id}, {$addToSet: {contributors: {user: commit.author}}}, (err, resp) ->
-							return callback() if err?
-							db.Repository.update {_id: repo._id, "contributors.user": commit.author }, {$inc: {"contributors.$.weight": changesMade}}, (err, resp) ->
-								callback()
-				], callback
-			, ->
-				winston.info "Saved commit #{commit.sha}"
-				callback()
+				if commit.changes.filter((x) -> x.language is language).length is 0
+					commit.changes.addToSet language: language, count: changesMade
+				else
+					commit.changes.filter((x) -> x.language is language)[0].count += changesMade
+				if repo.contributors.filter((x) -> x.user.toString() is commit.author.toString()).length is 0
+					repo.contributors.addToSet user: commit.author, weight: changesMade
+				else
+					repo.contributors.filter((x) -> x.user.toString() is commit.author.toString())[0].weight += changesMade
+			winston.info "Saved commit #{commit.sha}"
+			callback()
 
 cleanRepo = (repo, callback) ->
 	db.Commit.remove repository: repo._id, (err) ->

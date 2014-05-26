@@ -1,9 +1,9 @@
 mongoose = require "mongoose"
 
-mongoose.connect process.env.MONGO_CONN_STR
+mongoose.connect process.env.MONGO_CONN_STR ? "localhost"
 
 exports.User = mongoose.model "User",
-	username: String
+	username: type: String, index: true
 	languages: [
 		language: String
 		temporal: [
@@ -15,7 +15,7 @@ exports.User = mongoose.model "User",
 	followers: Number
 
 exports.Repository = mongoose.model "Repository",
-	fullName: String
+	fullName: type: String, index: true
 	stars: Number
 	forks: Number
 	contributors: [
@@ -30,7 +30,7 @@ exports.Repository = mongoose.model "Repository",
 	instanceId: String
 
 exports.Commit = mongoose.model "Commit",
-	sha: String
+	sha: type: String, index: true
 	author: type: mongoose.Schema.ObjectId, ref: "User"
 	repository: type: mongoose.Schema.ObjectId, ref: "Repository"
 	changes: [
@@ -40,7 +40,7 @@ exports.Commit = mongoose.model "Commit",
 	timestamp: Date
 
 exports.InstanceStatus = mongoose.model "InstanceStatus",
-	instanceId: String
+	instanceId: type: String, index: true
 	alive: Boolean
 
 exports.UserAvgWeight = mongoose.model "UserAvgWeight",
