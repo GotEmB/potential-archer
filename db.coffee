@@ -44,6 +44,10 @@ exports.InstanceStatus = mongoose.model "InstanceStatus",
 	instanceId: type: String, index: true
 	alive: Boolean
 
+exports.UserAvgWeight = mongoose.model "UserAvgWeight",
+	author: type: mongoose.Schema.ObjectId, ref: "User"
+	weight: Number
+
 exports.UserCommitActvity = mongoose.model "UserCommitActvity",
 	author: type: mongoose.Schema.ObjectId, ref: "User"
 	repository: type: mongoose.Schema.ObjectId, ref: "Repository"
