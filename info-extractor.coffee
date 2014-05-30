@@ -1,5 +1,6 @@
 db = require './db'
 async = require 'async'
+mongoose = require 'mongoose'
 
 extract_repo_activity = (done) ->
 	db.Commit.aggregate $match: {}
@@ -145,12 +146,39 @@ analyze_languagewise_contribution = (language_ratio ,repo_act, callback)->
 			console.log err if err?
 			callback
 
-update_avg_author_weights (err, resp)->
-
+extract_temporal_commit_info = (callback)->
+	o = {}
+	o.map = ()->
+		dt = new Date 0
+		dt.setMonth do this.timestamp.getMonth
+		dt.setYear do this.timestamp.getFullYear
+		dt.setDate 1
+		ret = {}
+		count = 0
+		for change in this.changes
+			count+= change.count
+		ret[dt] = count
+		emit this.author, ret
+	o.reduce = (user, changes)->
+		res = {}
+		for change in changes
+			key = ( Object.keys change )[0]
+			if not res[key]?
+				res[key] = 0
+			res[key] += change[key] 
+		return res
+	o.out =  replace: "temporalcommits" 
+	db.Commit.mapReduce o, (err, model, stats)->
+		console.log stats
+		callback err, model
 
 ## Remaining part: store temporal information
 
 async.parallel [
+	(callback) ->
+		extract_temporal_commit_info (err,resp)->
+			console.log "Completed -> extract_temporal_commit_info"
+			callback err, null
 	(callback) ->
 		update_repo_author_weights (err, resp)->
 			console.log "Completed -> update_repo_author_weights"
