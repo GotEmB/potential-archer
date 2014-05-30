@@ -61,6 +61,10 @@ fetchRepos = (totalRepos = 1000, stars, callback) ->
 				if err?
 					winston.error "Error at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", err, response, body
 					return searchJobs.enqueue thisJob
+				if response.statusCode >= 500
+					winston.error "Server Error at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", body
+					repo.serverError = true
+					return callback()
 				if response.statusCode >= 400
 					winston.error "Bad response at getAndInsertTopRepositories on page #{page} with stars <= #{stars}", body
 					return searchJobs.enqueue thisJob
@@ -121,6 +125,10 @@ fetchRepoLanguages = (repo, callback) ->
 			if err?
 				winston.error "Error at fetchRepoLanguages for repo #{repo.fullName}", err, response, body
 				return apiJobs.enqueue thisJob
+			if response.statusCode >= 500
+				winston.error "Server Error at fetchRepoLanguages for repo #{repo.fullName}", body
+				repo.serverError = true
+				return callback()
 			if response.statusCode >= 400
 				winston.error "Bad response at fetchRepoLanguages for repo #{repo.fullName}", body
 				return apiJobs.enqueue thisJob
@@ -144,6 +152,10 @@ fetchRepoCommits = (commits, repo, date = "", callback) ->
 			if err?
 				winston.error "Error at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", err, response, body
 				return apiJobs.enqueue thisJob
+			if response.statusCode >= 500
+				winston.error "Server Error at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", body
+				repo.serverError = true
+				return callback()
 			if response.statusCode >= 400
 				winston.error "Bad response at fetchRepoCommits for repo #{repo.fullName} since #{logDate}", body
 				return apiJobs.enqueue thisJob
@@ -191,6 +203,10 @@ fetchCommit = (repo, commit, callback) ->
 			if err?
 				winston.error "Error at fetchCommit #{commit.sha}", err, response, body
 				return apiJobs.enqueue thisJob
+			if response.statusCode >= 500
+				winston.error "Server Error at fetchCommit #{commit.sha}", body
+				repo.serverError = true
+				return callback()
 			if response.statusCode >= 400
 				winston.error "Bad response at fetchCommit #{commit.sha}", body
 				return apiJobs.enqueue thisJob
