@@ -70,7 +70,6 @@ update_avg_author_weights = (done) ->
 		avg: $avg: '$weight'
 	.exec (err, resp) ->
 		console.log err if err?
-		console.log resp
 		async.each resp,
 		(authorwt, callback) ->
 			new db.UserAvgWeight
@@ -147,27 +146,35 @@ analyze_languagewise_contribution = (language_ratio ,repo_act, callback)->
 			callback
 
 extract_temporal_commit_info = (callback)->
+	process.env.TZ = 'UTC'
 	o = {}
 	o.map = ()->
 		dt = new Date 0
 		dt.setMonth do this.timestamp.getMonth
 		dt.setYear do this.timestamp.getFullYear
 		dt.setDate 1
+
 		ret = {}
+		lang_changes = {}
 		count = 0
 		for change in this.changes
-			count+= change.count
-		ret[dt] = count
-		emit this.author, ret
-	o.reduce = (user, changes)->
+			if change.language? && dt?
+				emit change.language , { "date" : dt.toUTCString() , "changes" : change.count}
+			
+	o.reduce = (lang, changes)->
 		res = {}
 		for change in changes
-			key = ( Object.keys change )[0]
-			if not res[key]?
-				res[key] = 0
-			res[key] += change[key] 
-		return res
-	o.out =  replace: "temporalcommits" 
+			if change.date?
+				res[change.date] ?= 0
+				res[change.date] += change.changes
+		arr =
+			for key, value of res
+				date : key , changes : value
+		ret = {}
+		ret["lang"] = lang
+		ret["temporal"] = arr
+		ret
+	o.out =  replace: "temporalcommits_new" 
 	db.Commit.mapReduce o, (err, model, stats)->
 		console.log stats
 		callback err, model
@@ -191,6 +198,7 @@ async.parallel [
 		extract_user_activity (err, resp)->
 			console.log "Completed -> extract_user_activity"
 			callback err, null
+	
 ]
 , (err, results)->
 	analyze_languagewise_reposactivity (err,resp)->
@@ -214,3 +222,4 @@ async.parallel [
 		analyze_languagewise_contribution language_importance_ratio, resp, (err)->
 			console.log err if err?
 			console.log "Done..!!"
+
