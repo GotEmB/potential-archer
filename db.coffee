@@ -1,6 +1,6 @@
 mongoose = require "mongoose"
 
-mongoose.connect process.env.MONGO_CONN_STR ? "localhost"
+mongoose.connect process.env.MONGO_CONN_STR ? "mongodb://192.168.0.5:27017/cs249"
 
 exports.User = mongoose.model "User",
 	username: type: String, index: true
@@ -13,6 +13,10 @@ exports.User = mongoose.model "User",
 	]
 	starsEarned: Number
 	followers: Number
+	location: String
+	following: Number
+	name: String
+	hireable: Boolean
 
 exports.Repository = mongoose.model "Repository",
 	fullName: type: String, index: true

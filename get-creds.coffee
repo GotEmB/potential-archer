@@ -5,12 +5,13 @@ fs = require "fs"
 
 globals =
 	password: "abc123321"
-	totalCreds: 1000
+	totalCreds: 100
 
 generatedUsernames =
 	try
 		fs.readFileSync "creds.txt", encoding: "utf8"
 			.split /[\r\n]/
+			.filter (x) -> x isnt ""
 	catch
 		[]
 
