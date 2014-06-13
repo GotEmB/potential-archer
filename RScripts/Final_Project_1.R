@@ -26,7 +26,7 @@ if (not.installed("cluster"))
   install.packages("cluster")
 
 library("fpc")
-
+library("grid")
 library("graphics")
 library("stringr")
 library("rjson") 
@@ -144,11 +144,9 @@ print(head(ddply_Overall))
 print(dim(ddply_Overall))
 
 ggplot(ddply_Overall,aes(x= avg_popularity, y = avg_accessibility, colour = language)) + geom_point() + 
-  geom_text(aes(label=language),hjust=0, vjust=0)
+  geom_text(aes(label=language),hjust=0, vjust=0) + theme(legend.key.size = unit(0.4, "cm"))
 
-ggplot(ddply_Overall,aes(x= log(avg_popularity), y = log(avg_accessibility), colour = language)) + geom_point() + 
-  geom_text(aes(label=language),hjust=0, vjust=0)
-
+ggplot(ddply_Overall,aes(x= log(avg_popularity), y = log(avg_accessibility), colour = language)) + geom_point()  + theme(legend.key.size = unit(0.4, "cm"))
 ######
 
 mongo <- mongoDbConnect("cs249", host="localhost")
@@ -590,9 +588,9 @@ title("Measure of forks vs stars for both C and C++")
 
 #################################
 mongo <- mongoDbConnect("cs249", host="localhost")
-contribution_df <- dbGetQuery(mongo, "contributionratios", '{$or:[{"contribution_ratio": {$elemMatch:{"language":"JavaScript"}}},{"contribution_ratio": {$elemMatch:{"language":"CoffeeScript"}}}]}', skip=0, limit=100000)
+contribution_df <- dbGetQuery(mongo, "contributionratios", '{$or:[{"contribution_ratio": {$elemMatch:{"language":"Java"}}},{"contribution_ratio": {$elemMatch:{"language":"Ruby"}}}]}', skip=0, limit=100000)
 
-domain <- c("JavaScript","CoffeeScript")
+domain <- c("Java","Ruby")
 threshold <- c(0, 0) #change the 
 contribution_ratios <- contribution_df[,c("author","contribution_ratio"), drop=FALSE]
 user_contribution_list <- c()
@@ -617,7 +615,7 @@ for(i in 1:nrow(contribution_ratios))
     }
   } 
 }
-print("User contributed to either JS or CoffeeScript")
+print("User contributed to either Java or Ruby")
 print(length(unique(user_contribution_list)))
 print("User contributed to both")
 print(length((user_contribution_list)) - length(unique(user_contribution_list)))
@@ -643,7 +641,7 @@ h_forks_js <- hash(keys=user_contribution_unique_list, values= rep(0, length(use
 
 for(authorId in user_contribution_unique_list)
 {
-  cursor <- mongo.find(mongo_rmongodb, ns = "cs249.usercommitactvities", query=list(author=mongo.oid.from.string(authorId), language=list('$in'=c('JavaScript','CoffeeScript'))), fields=list(repository=1L,language=1L) )
+  cursor <- mongo.find(mongo_rmongodb, ns = "cs249.usercommitactvities", query=list(author=mongo.oid.from.string(authorId), language=list('$in'=c('Java','Ruby'))), fields=list(repository=1L,language=1L) )
   
   user_contributions_ratio <- mongo.find(mongo_rmongodb, ns = "cs249.contributionratios", query=list(author=mongo.oid.from.string(authorId)),fields=list(contribution_ratio=1L))
   ratio_lang <- 0
@@ -655,8 +653,8 @@ for(authorId in user_contribution_unique_list)
   {
     ratio <- mongo.cursor.value(user_contributions_ratio)
     ##ratio <- mongo.bson.value( ratio, "contribution_ratio")
-    ratio_css <- find_lang_contrib_ratio(ratio, "CoffeeScript")
-    ratio_js <- find_lang_contrib_ratio(ratio, "JavaScript")
+    ratio_css <- find_lang_contrib_ratio(ratio, "Ruby")
+    ratio_js <- find_lang_contrib_ratio(ratio, "Java")
   }
   
   while (mongo.cursor.next(cursor))
@@ -667,14 +665,14 @@ for(authorId in user_contribution_unique_list)
     ## get stars and forks from the user commit activities
     stars <- find_stars_lang(ddply_sum_lineCount, mongo.oid.to.string(oid) , lang)
     forks <- find_forks_lang(ddply_sum_lineCount, mongo.oid.to.string(oid) , lang)
-    if(lang == "CoffeeScript")
+    if(lang == "Ruby")
     {
       stars  <- stars * ratio_css
       forks  <- forks * ratio_css
       update_hash_value(h_forks_css, authorId, forks) 
       update_hash_value(h_stars_css, authorId, stars) 
     }
-    else if(lang == "JavaScript")
+    else if(lang == "Java")
     {
       stars  <- stars * ratio_js
       forks  <- forks * ratio_js
@@ -710,12 +708,12 @@ par(new=TRUE)
 l <- legend( "topleft", inset = c(0,0.4) 
              #             , cex = 1.5
              , bty = "n"
-             , legend = c("CoffeeScript", "Javascript")
+             , legend = c("Ruby", "Java")
              , text.col = c("red", "blue")
              , pt.bg = c("red","blue")
              , pch = c(21,21)
 )
-title("Measure of forks vs stars for both JS and CoffeeScript")
+title("Measure of forks vs stars for both Java and Ruby")
 
 
 
