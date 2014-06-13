@@ -1,6 +1,9 @@
 db = require './db'
 async = require 'async'
 mongoose = require 'mongoose'
+request = require 'request'
+jq = require 'job-queue'
+getcreads = require './get-creds'
 
 extract_repo_activity = (done) ->
 	db.Commit.aggregate $match: {}
@@ -180,7 +183,7 @@ extract_temporal_commit_info = (callback)->
 		callback err, model
 
 ## Remaining part: store temporal information
-
+###
 async.parallel [
 	(callback) ->
 		extract_temporal_commit_info (err,resp)->
@@ -222,4 +225,49 @@ async.parallel [
 		analyze_languagewise_contribution language_importance_ratio, resp, (err)->
 			console.log err if err?
 			console.log "Done..!!"
+###
 
+class GitHubApiConsumer
+	constructor: (@cred) ->
+		@nextTimestamp = new Date
+	consume: ({path, qs, onExecute, callback} = {}) =>
+		onExecute?()
+		return callback err: "No API endpoint specified" unless path?
+		qs ?= {}
+		request
+			method: "GET"
+			headers: 'User-Agent': "request"
+			url: "https://#{@cred.login}:#{@cred.password}@api.github.com#{path}"
+			qs: qs
+		, (err, response, body) =>
+			unless err?
+				@nextTimestamp = if Number(response.headers["x-ratelimit-remaining"]) is 0 then new Date Number response.headers["x-ratelimit-remaining"] else new Date
+			callback err, response, body
+		console.log "https://#{@cred.login}:#{@cred.password}@api.github.com#{path}"
+	getNextTimestamp: =>
+		@nextTimestamp
+
+getcreads (err, creds) ->
+	apiJobs = new jq creds.map (cred) -> new GitHubApiConsumer cred
+	db.User.find (err, resp)->
+		console.log err if err?
+		for usr in resp then do (usr) ->
+			apiJobs.enqueue
+				onExecute: ->
+					console.log "Executing for #{usr.username}"
+				path: "/users/#{usr.username}"
+				callback: (err, resp, body) ->
+					console.log err if err?
+					var1 = JSON.parse body
+					console.log var1
+					
+					db.User.update username : usr.username, 
+						$set :
+							location : var1.location ? ""
+							hireable : var1.hireable ? false
+							followers : var1.followers ? 0
+							following : var1.following ? 0
+							name : var1.name ? ""
+					, (err, resp) ->
+						console.log err if err?
+						console.log "Done"
