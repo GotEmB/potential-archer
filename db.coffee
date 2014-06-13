@@ -29,6 +29,8 @@ exports.Repository = mongoose.model "Repository",
 	done: Boolean
 	instanceId: String
 	serverError: Boolean
+	createdAt: Date
+	subscribersCount: Number
 
 exports.Commit = mongoose.model "Commit",
 	sha: type: String, index: true
