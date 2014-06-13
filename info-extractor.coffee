@@ -251,13 +251,20 @@ getcreads (err, creds) ->
 	apiJobs = new jq creds.map (cred) -> new GitHubApiConsumer cred
 	db.User.find (err, resp)->
 		console.log err if err?
-		for usr in resp then do (usr) ->
-			apiJobs.enqueue
+		async.eachLimit resp, 100, (usr, callback) ->
+			apiJobs.enqueue thisJob =
 				onExecute: ->
 					console.log "Executing for #{usr.username}"
 				path: "/users/#{usr.username}"
 				callback: (err, resp, body) ->
 					console.log err if err?
+					if resp.statusCode >= 400
+						if resp.statusCode is 404
+							console.log "#{usr.username} not found"
+							return callback()
+						else
+							console.log "Re-enqueuing job for #{usr.username}"
+							return apiJobs.enqueue thisJob
 					var1 = JSON.parse body
 					console.log var1
 					
@@ -269,5 +276,6 @@ getcreads (err, creds) ->
 							following : var1.following ? 0
 							name : var1.name ? ""
 					, (err, resp) ->
+						callback()
 						console.log err if err?
 						console.log "Done"
