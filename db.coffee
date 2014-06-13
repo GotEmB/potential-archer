@@ -13,6 +13,10 @@ exports.User = mongoose.model "User",
 	]
 	starsEarned: Number
 	followers: Number
+	location: String
+	following: Number
+	name: String
+	hireable: Boolean
 
 exports.Repository = mongoose.model "Repository",
 	fullName: type: String, index: true
